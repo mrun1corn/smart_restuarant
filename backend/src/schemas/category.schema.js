@@ -1,0 +1,18 @@
+import { z } from 'zod';
+
+export const createCategorySchema = z.object({
+  body: z.object({
+    name: z.string().min(1, 'Name is required'),
+    sortOrder: z.number().int().optional(),
+  }),
+});
+
+export const updateCategorySchema = z.object({
+  params: z.object({
+    id: z.string().uuid(),
+  }),
+  body: z.object({
+    name: z.string().min(1).optional(),
+    sortOrder: z.number().int().optional(),
+  }),
+});

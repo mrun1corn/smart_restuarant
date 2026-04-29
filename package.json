@@ -1,0 +1,21 @@
+{
+  "name": "smart-restaurant-system",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install-all": "npm install && npm install --prefix backend && npm install --prefix frontend",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm run dev --prefix backend -- --host",
+    "dev:frontend": "npm run dev --prefix frontend -- --host",
+    "build": "npm run build --prefix frontend",
+    "start": "npm start --prefix backend",
+    "pm2": "pm2 start ecosystem.config.cjs",
+    "db:migrate": "npm run prisma:migrate --prefix backend",
+    "db:generate": "npm run prisma:generate --prefix backend",
+    "db:seed": "npm run prisma:seed --prefix backend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "dotenv": "^17.4.2"
+  }
+}
