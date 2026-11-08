@@ -35,32 +35,40 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // Create Order with Items
-    const order = await prisma.order.create({
-      data: {
-        tableId: table_id,
-        note: note || null,
-        totalPrice,
-        status: 'pending',
-        items: {
-          create: orderItemsData,
+    // Create Order and update table status atomically in a transaction
+    const { order, tableWasAvailable } = await prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        data: {
+          tableId: table_id,
+          note: note || null,
+          totalPrice,
+          status: 'pending',
+          items: {
+            create: orderItemsData,
+          },
         },
-      },
-      include: {
-        items: {
-          include: { menuItem: true }
-        },
-        table: true
+        include: {
+          items: {
+            include: { menuItem: true }
+          },
+          table: true
+        }
+      });
+
+      let wasAvailable = false;
+      if (table.status === 'available') {
+        await tx.restaurantTable.update({
+          where: { id: table_id },
+          data: { status: 'occupied' }
+        });
+        wasAvailable = true;
       }
+
+      return { order: created, tableWasAvailable: wasAvailable };
     });
 
-    // Update Table status if it was available
-    if (table.status === 'available') {
-        await prisma.restaurantTable.update({
-            where: { id: table_id },
-            data: { status: 'occupied' }
-        });
-        io.to('dashboard-room').emit('table:status_changed', { table_id, status: 'occupied' });
+    if (tableWasAvailable && io) {
+      io.to('dashboard-room').emit('table:status_changed', { table_id, status: 'occupied' });
     }
 
     // Emit Real-time event to Receptionist Dashboard
@@ -129,38 +137,82 @@ export const updateOrderStatus = async (req, res) => {
   const io = req.app.get('io');
 
   try {
-    const order = await prisma.order.update({
+    const existingOrder = await prisma.order.findUnique({
       where: { id },
-      data: { status },
       include: { table: true }
     });
 
-    // If order is paid or cancelled, check if table should be freed
-    if (status === 'paid' || status === 'cancelled') {
-      const activeOrdersCount = await prisma.order.count({
-        where: {
-          tableId: order.tableId,
-          status: { in: ['pending', 'confirmed', 'preparing', 'served'] }
-        }
+    if (!existingOrder) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Terminal state protection: once paid or cancelled, orders cannot transition
+    if (existingOrder.status === 'paid' || existingOrder.status === 'cancelled') {
+      return res.status(400).json({
+        error: `Cannot change status of a finalized order (${existingOrder.status})`
+      });
+    }
+
+    // Role boundary: only admin can mark orders as 'paid' or 'cancelled' directly
+    if ((status === 'paid' || status === 'cancelled') && req.user?.role !== 'admin') {
+      return res.status(403).json({
+        error: `Forbidden: Only administrator can finalize an order as '${status}'`
+      });
+    }
+
+    // State machine allowed transitions
+    const validTransitions = {
+      pending: ['confirmed', 'cancelled'],
+      confirmed: ['preparing', 'cancelled'],
+      preparing: ['served', 'cancelled'],
+      served: ['paid'],
+      paid: [],
+      cancelled: []
+    };
+
+    if (!validTransitions[existingOrder.status]?.includes(status)) {
+      return res.status(400).json({
+        error: `Invalid status transition from '${existingOrder.status}' to '${status}'`
+      });
+    }
+
+    // Execute order status update and table status check atomically
+    const { order, tableFreed } = await prisma.$transaction(async (tx) => {
+      const updated = await tx.order.update({
+        where: { id },
+        data: { status },
+        include: { table: true }
       });
 
-      if (activeOrdersCount === 0) {
-        await prisma.restaurantTable.update({
-          where: { id: order.tableId },
-          data: { status: 'available' }
+      let freed = false;
+      if (status === 'paid' || status === 'cancelled') {
+        const activeCount = await tx.order.count({
+          where: {
+            tableId: existingOrder.tableId,
+            status: { in: ['pending', 'confirmed', 'preparing', 'served'] }
+          }
         });
-        if (io) {
-          io.to('dashboard-room').emit('table:status_changed', { table_id: order.tableId, status: 'available' });
+
+        if (activeCount === 0) {
+          await tx.restaurantTable.update({
+            where: { id: existingOrder.tableId },
+            data: { status: 'available' }
+          });
+          freed = true;
         }
       }
+
+      return { order: updated, tableFreed: freed };
+    });
+
+    if (tableFreed && io) {
+      io.to('dashboard-room').emit('table:status_changed', { table_id: existingOrder.tableId, status: 'available' });
     }
 
     if (io) {
       io.to('dashboard-room').emit('order:updated', { order_id: id, status });
-      // Emit globally for general updates
       io.emit('order:updated', { order_id: id, status });
-      
-      // Specifically notify the table if order is ready (served)
+
       if (status === 'served') {
         io.to(`table:${order.tableId}`).emit('order:ready', { order_id: id });
       }
@@ -168,6 +220,7 @@ export const updateOrderStatus = async (req, res) => {
 
     res.status(200).json(order);
   } catch (error) {
+    console.error('UpdateOrderStatus error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -177,28 +230,57 @@ export const cancelOrder = async (req, res) => {
   const io = req.app.get('io');
 
   try {
-    const order = await prisma.order.update({
+    const existingOrder = await prisma.order.findUnique({
       where: { id },
-      data: { status: 'cancelled' },
       include: { table: true }
     });
 
-    // Check if table should be freed
-    const activeOrdersCount = await prisma.order.count({
-      where: {
-        tableId: order.tableId,
-        status: { in: ['pending', 'confirmed', 'preparing', 'served'] }
+    if (!existingOrder) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Terminal state protection
+    if (existingOrder.status === 'paid' || existingOrder.status === 'cancelled') {
+      return res.status(400).json({
+        error: `Cannot cancel an already ${existingOrder.status} order`
+      });
+    }
+
+    // Role check: Only admin can unilaterally void/cancel orders once placed
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        error: 'Forbidden: Admin access required to cancel orders'
+      });
+    }
+
+    const { order, tableFreed } = await prisma.$transaction(async (tx) => {
+      const updated = await tx.order.update({
+        where: { id },
+        data: { status: 'cancelled' },
+        include: { table: true }
+      });
+
+      const activeCount = await tx.order.count({
+        where: {
+          tableId: existingOrder.tableId,
+          status: { in: ['pending', 'confirmed', 'preparing', 'served'] }
+        }
+      });
+
+      let freed = false;
+      if (activeCount === 0) {
+        await tx.restaurantTable.update({
+          where: { id: existingOrder.tableId },
+          data: { status: 'available' }
+        });
+        freed = true;
       }
+
+      return { order: updated, tableFreed: freed };
     });
 
-    if (activeOrdersCount === 0) {
-      await prisma.restaurantTable.update({
-        where: { id: order.tableId },
-        data: { status: 'available' }
-      });
-      if (io) {
-        io.to('dashboard-room').emit('table:status_changed', { table_id: order.tableId, status: 'available' });
-      }
+    if (tableFreed && io) {
+      io.to('dashboard-room').emit('table:status_changed', { table_id: existingOrder.tableId, status: 'available' });
     }
 
     if (io) {
@@ -208,6 +290,7 @@ export const cancelOrder = async (req, res) => {
 
     res.status(200).json(order);
   } catch (error) {
+    console.error('CancelOrder error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

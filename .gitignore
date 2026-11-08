@@ -28,3 +28,10 @@ backend/prisma/dev.db
 backend/prisma/dev.db-journal
 frontend/dist/
 .gemini/
+
+# AI & Indexing artifacts
+.claude/
+.repowise/
+graphify-out/
+.github/copilot-instructions.md
+.archify/

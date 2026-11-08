@@ -7,7 +7,7 @@ import {
   updateOrderStatus,
   cancelOrder,
 } from '../controllers/order.controller.js';
-import { verifyToken } from '../middleware/auth.js';
+import { verifyToken, requireAdmin } from '../middleware/auth.js';
 import validate from '../middleware/validate.js';
 import { createOrderSchema, updateOrderStatusSchema } from '../schemas/order.schema.js';
 
@@ -17,7 +17,7 @@ router.post('/', validate(createOrderSchema), createOrder); // Public (Customers
 router.get('/', verifyToken, getAllOrders); // Staff only
 router.get('/:id', verifyToken, getOrderById); // Staff only
 router.get('/table/:tableId', verifyToken, getOrdersByTable); // Staff only
-router.patch('/:id/status', verifyToken, validate(updateOrderStatusSchema), updateOrderStatus); // Staff only
-router.delete('/:id', verifyToken, cancelOrder); // Staff only
+router.patch('/:id/status', verifyToken, validate(updateOrderStatusSchema), updateOrderStatus); // Staff update (admin checked for final status)
+router.delete('/:id', verifyToken, requireAdmin, cancelOrder); // Admin only
 
 export default router;

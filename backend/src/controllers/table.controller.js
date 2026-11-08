@@ -79,9 +79,21 @@ export const updateTable = async (req, res) => {
 export const deleteTable = async (req, res) => {
   const { id } = req.params;
   try {
+    // Audit protection: Check if active or historical orders exist for this table
+    const orderCount = await prisma.order.count({
+      where: { tableId: id }
+    });
+
+    if (orderCount > 0) {
+      return res.status(409).json({
+        error: 'Cannot delete table with existing order history. Existing records are protected for audit integrity.'
+      });
+    }
+
     await prisma.restaurantTable.delete({ where: { id } });
     res.status(204).send();
   } catch (error) {
+    console.error('DeleteTable error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

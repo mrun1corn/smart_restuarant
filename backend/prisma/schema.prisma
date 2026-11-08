@@ -59,7 +59,7 @@ model Order {
   totalPrice Decimal?
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
-  table      RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  table      RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Restrict)
   items      OrderItem[]
 }
 

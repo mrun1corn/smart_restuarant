@@ -2,10 +2,28 @@ import prisma from '../prisma.js';
 
 export const getSalesReport = async (req, res) => {
   try {
+    const { startDate, endDate } = req.query;
+    const whereClause = { status: 'paid' };
+
+    if (startDate || endDate) {
+      whereClause.createdAt = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        if (!isNaN(start.getTime())) whereClause.createdAt.gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        if (!isNaN(end.getTime())) whereClause.createdAt.lte = end;
+      }
+    } else {
+      // Default to last 90 days to prevent unbounded memory exhaustion
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      whereClause.createdAt = { gte: ninetyDaysAgo };
+    }
+
     const orders = await prisma.order.findMany({
-      where: {
-        status: 'paid',
-      },
+      where: whereClause,
       select: {
         totalPrice: true,
         createdAt: true,
@@ -13,6 +31,7 @@ export const getSalesReport = async (req, res) => {
       orderBy: {
         createdAt: 'asc',
       },
+      take: 10000, // Hard ceiling protecting V8 heap
     });
 
     // Summary calculations

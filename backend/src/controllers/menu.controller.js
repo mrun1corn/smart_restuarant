@@ -31,6 +31,9 @@ export const getMenuItemById = async (req, res) => {
 
 export const createMenuItem = async (req, res) => {
   const { name, description, price, categoryId, isAvailable, imageUrl } = req.body;
+  // If a file was uploaded through Multer (Cloudinary), use its URL
+  const resolvedImageUrl = req.file?.path || imageUrl || null;
+
   try {
     const item = await prisma.menuItem.create({
       data: {
@@ -39,7 +42,7 @@ export const createMenuItem = async (req, res) => {
         price,
         categoryId: categoryId || null,
         isAvailable: isAvailable ?? true,
-        imageUrl: imageUrl || null,
+        imageUrl: resolvedImageUrl,
       },
     });
     res.status(201).json(item);
@@ -52,6 +55,8 @@ export const createMenuItem = async (req, res) => {
 export const updateMenuItem = async (req, res) => {
   const { id } = req.params;
   const { name, description, price, categoryId, isAvailable, imageUrl } = req.body;
+  const resolvedImageUrl = req.file?.path || (imageUrl === null ? null : imageUrl);
+
   try {
     const item = await prisma.menuItem.update({
       where: { id },
@@ -61,7 +66,7 @@ export const updateMenuItem = async (req, res) => {
         price,
         categoryId: categoryId === null ? null : categoryId,
         isAvailable,
-        imageUrl: imageUrl === null ? null : imageUrl,
+        ...(resolvedImageUrl !== undefined ? { imageUrl: resolvedImageUrl } : {}),
       },
     });
     res.status(200).json(item);
