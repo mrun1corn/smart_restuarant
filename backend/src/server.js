@@ -79,6 +79,12 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('waiter:responding', (data) => {
+    if (!socket.user || (socket.user.role !== 'admin' && socket.user.role !== 'receptionist')) return;
+    if (!data || typeof data.tableId !== 'string') return;
+    io.to(`table:${data.tableId}`).emit('waiter:responding');
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
   });

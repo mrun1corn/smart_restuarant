@@ -211,7 +211,7 @@ export const updateOrderStatus = async (req, res) => {
 
     if (io) {
       io.to('dashboard-room').emit('order:updated', { order_id: id, status });
-      io.emit('order:updated', { order_id: id, status });
+      io.to(`table:${order.tableId}`).emit('order:updated', { order_id: id, status });
 
       if (status === 'served') {
         io.to(`table:${order.tableId}`).emit('order:ready', { order_id: id });
@@ -285,7 +285,7 @@ export const cancelOrder = async (req, res) => {
 
     if (io) {
       io.to('dashboard-room').emit('order:cancelled', { order_id: id });
-      io.emit('order:cancelled', { order_id: id });
+      io.to(`table:${existingOrder.tableId}`).emit('order:cancelled', { order_id: id });
     }
 
     res.status(200).json(order);

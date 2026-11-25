@@ -81,14 +81,14 @@ const MenuPage = () => {
     if (items.length === 0) return;
     setPlacingOrder(true);
     try {
-      await axiosClient.post('/orders', {
+      const { data } = await axiosClient.post('/orders', {
         table_id: tableId,
         note: orderNote,
         items: items
       });
       clearCart();
       setIsCartOpen(false);
-      navigate('/order/success');
+      navigate('/order/success', { state: { orderId: data.order_id, tableId } });
     } catch (error) {
       toast.error('Failed to place order. Please try again.');
     } finally {

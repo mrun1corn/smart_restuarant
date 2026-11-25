@@ -1,33 +1,37 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { CheckCircle2, Clock, ChefHat, Utensils, Check, XCircle } from 'lucide-react';
 import { io } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
 const OrderSuccess = () => {
+  const { state } = useLocation();
+  const orderId = state?.orderId;
+  const tableId = state?.tableId;
   const [orderStatus, setOrderStatus] = useState('pending');
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
+    if (!tableId) return;
     const socket = io(SOCKET_URL);
+    const isThisOrder = (data) => !orderId || data.order_id === orderId;
 
     socket.on('connect', () => {
       setConnected(true);
-      console.log('Connected to order tracking');
+      socket.emit('join:table', tableId);
     });
 
     socket.on('order:updated', (data) => {
-      // In a real app, we'd check if data.order_id matches the current order
-      // For this prototype, we'll update the status for demonstration
-      setOrderStatus(data.status);
+      if (isThisOrder(data)) setOrderStatus(data.status);
     });
 
-    socket.on('order:cancelled', () => {
-      setOrderStatus('cancelled');
+    socket.on('order:cancelled', (data) => {
+      if (isThisOrder(data)) setOrderStatus('cancelled');
     });
 
     return () => socket.disconnect();
-  }, []);
+  }, [tableId, orderId]);
 
   const getStatusDetails = () => {
     switch (orderStatus) {
