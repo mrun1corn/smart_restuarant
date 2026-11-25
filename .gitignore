@@ -35,3 +35,13 @@ frontend/dist/
 graphify-out/
 .github/copilot-instructions.md
 .archify/
+
+# Generated documents (rebuild with: python generate_book.py && python generate_docx.py)
+University Project book.pdf
+University Project book.docx
+Smart_Restaurant_Project_Proposal.pdf
+
+# Local tooling caches
+.serena/
+__pycache__/
+*.pyc
