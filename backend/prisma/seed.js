@@ -1,5 +1,8 @@
+import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
+
+dotenv.config({ path: new URL('../../.env', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1') });
 
 const prisma = new PrismaClient();
 
